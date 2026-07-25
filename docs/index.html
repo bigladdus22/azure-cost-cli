@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Azure Cost Estimator</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1b1f24; --muted: #5b6470;
+    --line: #e2e6ea; --accent: #0a7bd4; --accent-ink: #ffffff;
+    --ok: #1a7f45; --warn: #b23c17; --chip: #eef3f8;
+    --shadow: 0 1px 3px rgba(16,24,40,.06), 0 1px 2px rgba(16,24,40,.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --panel: #171b21; --ink: #e8ebef; --muted: #9aa4b0;
+      --line: #262c34; --accent: #3b9be6; --accent-ink: #06121c;
+      --ok: #4ad185; --warn: #ff8a5c; --chip: #1d232b;
+      --shadow: 0 1px 3px rgba(0,0,0,.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 20px 80px; }
+  header h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.01em; }
+  header p { color: var(--muted); margin: 0 0 20px; max-width: 62ch; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 18px; margin-bottom: 18px;
+  }
+  .panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); margin: 0 0 14px; }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 4px; font-weight: 600; }
+  input, select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink); font: inherit;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+  .rows-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 760px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); font-weight: 700; padding: 0 8px 8px; }
+  td { padding: 4px 6px; vertical-align: top; }
+  td input, td select { padding: 7px 8px; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  button {
+    font: inherit; font-weight: 600; border-radius: 8px; border: 1px solid transparent;
+    padding: 9px 16px; cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-primary:disabled { opacity: .55; cursor: progress; }
+  .btn-ghost { background: transparent; color: var(--accent); border-color: var(--line); }
+  .btn-x { background: transparent; color: var(--muted); border: none; padding: 6px 8px; font-size: 16px; }
+  .btn-x:hover { color: var(--warn); }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .results table { min-width: 640px; }
+  .results td { padding: 8px; border-top: 1px solid var(--line); }
+  .results .sub { color: var(--muted); font-size: 12px; }
+  .totals { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 16px; padding-top: 16px; border-top: 2px solid var(--line); }
+  .totals div span { display: block; }
+  .totals .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .totals .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--chip); }
+  .err { color: var(--warn); font-weight: 600; }
+  .note { font-size: 13px; color: var(--muted); }
+  .note code { background: var(--chip); padding: 1px 5px; border-radius: 5px; }
+  details { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 6px; }
+  summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+  a { color: var(--accent); }
+  .foot { color: var(--muted); font-size: 12px; margin-top: 30px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Azure Cost Estimator</h1>
+    <p>Price an application's Azure footprint using live figures from the public
+       <strong>Azure Retail Prices API</strong> — the same data behind the Azure Pricing Calculator.
+       Everything runs in your browser; no server, no keys.</p>
+  </header>
+
+  <section class="panel">
+    <h2>Settings</h2>
+    <div class="grid">
+      <div>
+        <label for="appName">Application name</label>
+        <input id="appName" value="my-app" />
+      </div>
+      <div>
+        <label for="currency">Billing currency</label>
+        <select id="currency"></select>
+      </div>
+      <div>
+        <label for="defRegion">Default region</label>
+        <select id="defRegion"></select>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Resources</h2>
+    <div class="rows-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:16%">Label</th>
+            <th style="width:20%">Azure service</th>
+            <th style="width:14%">Region</th>
+            <th style="width:18%">ARM SKU (optional)</th>
+            <th style="width:14%">Price type</th>
+            <th style="width:12%">Qty / month</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button class="btn-ghost" id="addRow">+ Add resource</button>
+      <button class="btn-primary" id="estimate">Estimate cost</button>
+    </div>
+    <p class="note" style="margin-top:12px">
+      Quantity is billed units per month — e.g. <code>730</code> hours for an always-on VM, or GB-months of storage.
+      Add an ARM SKU (like <code>Standard_D2s_v5</code>) to pin an exact meter.
+    </p>
+
+    <details>
+      <summary>Load inventory from Supabase (optional)</summary>
+      <div class="grid" style="margin-top:12px">
+        <div>
+          <label for="sbUrl">Supabase URL</label>
+          <input id="sbUrl" placeholder="https://YOUR-REF.supabase.co" />
+        </div>
+        <div>
+          <label for="sbKey">Publishable / anon key</label>
+          <input id="sbKey" placeholder="public anon key only — never the service-role key" />
+        </div>
+        <div>
+          <label for="sbApp">Application name</label>
+          <input id="sbApp" placeholder="app name in Supabase" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn-ghost" id="sbLoad">Load resources</button>
+      </div>
+      <p class="note" style="margin-top:10px">
+        Uses the browser-safe <strong>anon key</strong> and needs a row-level-security
+        <em>SELECT</em> policy on <code>applications</code> / <code>application_resources</code>.
+        Writing cost snapshots stays with the CLI/backend (it needs the secret key).
+      </p>
+    </details>
+  </section>
+
+  <section class="panel results" id="resultsPanel" style="display:none">
+    <h2>Estimate</h2>
+    <div class="rows-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Resource</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Monthly</th>
+          </tr>
+        </thead>
+        <tbody id="resultRows"></tbody>
+      </table>
+    </div>
+    <div class="totals">
+      <div><span class="k">Monthly total</span><span class="v" id="monthlyTotal">—</span></div>
+      <div><span class="k">Annual total</span><span class="v" id="annualTotal">—</span></div>
+      <div><span class="k">Currency</span><span class="v" id="curLabel">—</span></div>
+    </div>
+    <p class="note" style="margin-top:14px">
+      Retail (pay-as-you-go) estimates. Actual bills vary with reservations, discounts,
+      tiered usage and taxes. When several meters match, the cheapest primary-region meter is used.
+    </p>
+  </section>
+
+  <p class="foot">
+    Powered by the Azure Retail Prices API · part of
+    <a href="https://github.com/bigladdus22/azure-cost-cli">azure-cost-cli</a>
+  </p>
+</div>
+
+<script>
+"use strict";
+
+// --- Guardrail data, mirrored from the Python core -------------------------
+const ENDPOINT = "https://prices.azure.com/api/retail/prices";
+const API_VERSION = "2023-01-01-preview";
+const HTTP_TIMEOUT_MS = 30000;
+const MAX_PAGES = 20;
+
+const CURRENCIES = ["EUR","USD","GBP","AUD","BRL","CAD","CHF","CNY","DKK","INR",
+  "JPY","KRW","NOK","NZD","RUB","SEK","TWD"];
+const REGIONS = ["westeurope","northeurope","uksouth","ukwest","eastus","eastus2",
+  "westus","westus2","westus3","centralus","southcentralus","francecentral",
+  "germanywestcentral","swedencentral","norwayeast","switzerlandnorth","eastasia",
+  "southeastasia","australiaeast","japaneast","canadacentral","brazilsouth"];
+const PRICE_TYPES = ["Consumption","Reservation","DevTestConsumption"];
+const ALLOWED_FILTER_FIELDS = new Set(
+  ["serviceName","armRegionName","armSkuName","meterName","productName","priceType"]);
+const COMMON_SERVICES = ["Virtual Machines","Storage","Azure App Service",
+  "Azure Database for PostgreSQL","Azure SQL Database","Functions","Bandwidth",
+  "Azure Kubernetes Service","Container Registry","Load Balancer","Virtual Network",
+  "Azure Cosmos DB","Azure Cache for Redis","Application Gateway","Log Analytics"];
+
+class ValidationError extends Error {}
+class PriceNotFoundError extends Error {}
+class PricingError extends Error {}
+
+// --- OData filter building (injection-safe) --------------------------------
+function escapeODataLiteral(value) {
+  for (const ch of value) {
+    if (ch.charCodeAt(0) < 0x20) throw new ValidationError("filter value contains control characters");
+  }
+  return value.replace(/'/g, "''");
+}
+function eqClause(field, value) {
+  if (!ALLOWED_FILTER_FIELDS.has(field)) throw new ValidationError(`field ${field} is not filterable`);
+  return `${field} eq '${escapeODataLiteral(value)}'`;
+}
+function buildFilter(spec) {
+  const clauses = [
+    eqClause("serviceName", spec.serviceName),
+    eqClause("armRegionName", spec.region),
+    eqClause("priceType", spec.priceType),
+  ];
+  if (spec.armSkuName) clauses.push(eqClause("armSkuName", spec.armSkuName));
+  if (spec.meterName)  clauses.push(eqClause("meterName", spec.meterName));
+  if (spec.productName) clauses.push(eqClause("productName", spec.productName));
+  return clauses.join(" and ");
+}
+
+// --- Validation ------------------------------------------------------------
+function validateSpec(raw) {
+  const serviceName = (raw.serviceName || "").trim();
+  const region = (raw.region || "").trim().toLowerCase();
+  if (!serviceName) throw new ValidationError("service is required");
+  if (!REGIONS.includes(region)) throw new ValidationError(`region ${region || "(blank)"} not in the allow-list`);
+  if (!PRICE_TYPES.includes(raw.priceType)) throw new ValidationError(`bad price type ${raw.priceType}`);
+  const quantity = Number(raw.quantity);
+  if (!Number.isFinite(quantity) || quantity < 0) throw new ValidationError("quantity must be finite and non-negative");
+  return {
+    label: (raw.label || "").trim(),
+    serviceName, region, priceType: raw.priceType, quantity,
+    armSkuName: (raw.armSkuName || "").trim() || null,
+    meterName: null, productName: null,
+  };
+}
+function displayName(spec) { return spec.label || spec.armSkuName || spec.serviceName; }
+
+// --- Azure Retail Prices client (timeout + paging + page cap) --------------
+async function fetchJson(url, params) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), HTTP_TIMEOUT_MS);
+  try {
+    const full = params ? `${url}?${params.toString()}` : url;
+    const resp = await fetch(full, { signal: ctrl.signal, headers: { "Accept": "application/json" } });
+    if (!resp.ok) throw new PricingError(`Retail Prices API returned status ${resp.status}`);
+    return await resp.json();
+  } catch (e) {
+    if (e.name === "AbortError") throw new PricingError("request timed out");
+    if (e instanceof PricingError) throw e;
+    throw new PricingError(`could not reach the Azure Retail Prices API (${e.message})`);
+  } finally { clearTimeout(t); }
+}
+async function iterItems(currency, odataFilter) {
+  let params = new URLSearchParams({ "$filter": odataFilter, "currencyCode": currency, "api-version": API_VERSION });
+  let url = ENDPOINT, items = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const payload = await fetchJson(url, params);
+    if (Array.isArray(payload.Items)) items = items.concat(payload.Items);
+    if (!payload.NextPageLink) return items;
+    url = payload.NextPageLink; params = null; // NextPageLink already carries the query
+  }
+  throw new PricingError(`filter matched more than ${MAX_PAGES} pages — narrow it with an ARM SKU`);
+}
+function pickMeter(items) {
+  let primary = items.filter(i => i.isPrimaryMeterRegion);
+  if (!primary.length) primary = items;
+  let priced = primary.filter(i => Number(i.retailPrice) > 0);
+  if (!priced.length) priced = primary;
+  return priced.reduce((a, b) => (Number(b.retailPrice) < Number(a.retailPrice) ? b : a));
+}
+async function priceResource(currency, spec) {
+  const items = await iterItems(currency, buildFilter(spec));
+  if (!items.length) throw new PriceNotFoundError(`no Azure meter matched ${displayName(spec)}`);
+  const m = pickMeter(items);
+  return { spec, unitPrice: Number(m.retailPrice), currency: m.currencyCode || currency,
+    product: m.productName || "", sku: m.skuName || "", meterId: m.meterId || "" };
+}
+
+// --- UI --------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+const money = (n, cur) => new Intl.NumberFormat(undefined, { style: "currency", currency: cur }).format(n);
+
+function fillSelect(sel, values, selected) {
+  sel.innerHTML = "";
+  for (const v of values) {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = v; if (v === selected) o.selected = true;
+    sel.appendChild(o);
+  }
+}
+
+let serviceListId = "svcList";
+function ensureServiceDatalist() {
+  if (document.getElementById(serviceListId)) return;
+  const dl = document.createElement("datalist");
+  dl.id = serviceListId;
+  for (const s of COMMON_SERVICES) { const o = document.createElement("option"); o.value = s; dl.appendChild(o); }
+  document.body.appendChild(dl);
+}
+
+function addRow(preset = {}) {
+  const tr = document.createElement("tr");
+  const region = preset.region || $("defRegion").value;
+  tr.innerHTML = `
+    <td><input class="f-label" placeholder="web-tier" value="${preset.label || ""}"></td>
+    <td><input class="f-service" list="${serviceListId}" placeholder="Virtual Machines" value="${preset.serviceName || ""}"></td>
+    <td><select class="f-region"></select></td>
+    <td><input class="f-sku" placeholder="Standard_D2s_v5" value="${preset.armSkuName || ""}"></td>
+    <td><select class="f-ptype"></select></td>
+    <td><input class="f-qty num" type="number" min="0" step="any" value="${preset.quantity ?? 730}"></td>
+    <td><button class="btn-x" title="Remove">&times;</button></td>`;
+  fillSelect(tr.querySelector(".f-region"), REGIONS, region);
+  fillSelect(tr.querySelector(".f-ptype"), PRICE_TYPES, preset.priceType || "Consumption");
+  tr.querySelector(".btn-x").onclick = () => tr.remove();
+  $("rows").appendChild(tr);
+}
+
+function readRows() {
+  return [...$("rows").children].map(tr => ({
+    label: tr.querySelector(".f-label").value,
+    serviceName: tr.querySelector(".f-service").value,
+    region: tr.querySelector(".f-region").value,
+    armSkuName: tr.querySelector(".f-sku").value,
+    priceType: tr.querySelector(".f-ptype").value,
+    quantity: tr.querySelector(".f-qty").value,
+  }));
+}
+
+async function estimate() {
+  const btn = $("estimate");
+  btn.disabled = true; btn.textContent = "Pricing…";
+  const currency = $("currency").value;
+  const body = $("resultRows"); body.innerHTML = "";
+  $("resultsPanel").style.display = "block";
+  $("curLabel").textContent = currency;
+  let monthly = 0;
+
+  for (const raw of readRows()) {
+    const tr = document.createElement("tr");
+    let spec;
+    try {
+      spec = validateSpec(raw);
+    } catch (e) {
+      tr.innerHTML = `<td colspan="4"><span class="err">${raw.label || raw.serviceName || "resource"}: ${e.message}</span></td>`;
+      body.appendChild(tr); continue;
+    }
+    try {
+      const pr = await priceResource(currency, spec);
+      const cost = pr.unitPrice * spec.quantity;
+      monthly += cost;
+      tr.innerHTML = `
+        <td><strong>${displayName(spec)}</strong>
+          <div class="sub">${pr.product || spec.serviceName}${pr.sku ? " · " + pr.sku : ""} · ${spec.region}</div></td>
+        <td class="num">${spec.quantity.toLocaleString()}</td>
+        <td class="num">${money(pr.unitPrice, currency)}</td>
+        <td class="num"><strong>${money(cost, currency)}</strong></td>`;
+    } catch (e) {
+      const kind = e instanceof PriceNotFoundError ? "no match" : "error";
+      tr.innerHTML = `
+        <td><strong>${displayName(spec)}</strong><div class="sub">${spec.serviceName} · ${spec.region}</div></td>
+        <td class="num">${spec.quantity.toLocaleString()}</td>
+        <td class="num" colspan="2"><span class="err">${kind}: ${e.message}</span></td>`;
+    }
+    body.appendChild(tr);
+  }
+
+  $("monthlyTotal").textContent = money(monthly, currency);
+  $("annualTotal").textContent = money(monthly * 12, currency);
+  btn.disabled = false; btn.textContent = "Estimate cost";
+  $("resultsPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+// --- Optional Supabase loader (read-only, anon key) ------------------------
+async function loadFromSupabase() {
+  const url = $("sbUrl").value.trim().replace(/\/$/, "");
+  const key = $("sbKey").value.trim();
+  const app = $("sbApp").value.trim();
+  if (!url.startsWith("https://") || !key || !app) {
+    alert("Enter an https Supabase URL, an anon key, and an application name."); return;
+  }
+  const q = new URLSearchParams({
+    select: "name,application_resources(*)", name: `eq.${app}`, limit: "1" });
+  try {
+    const resp = await fetch(`${url}/rest/v1/applications?${q}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` } });
+    if (!resp.ok) throw new Error(`status ${resp.status}`);
+    const rows = await resp.json();
+    if (!rows.length) { alert(`No application named "${app}" (or RLS blocks the anon key).`); return; }
+    if (rows[0].name) $("appName").value = rows[0].name;
+    $("rows").innerHTML = "";
+    for (const r of (rows[0].application_resources || [])) {
+      addRow({ label: r.label, serviceName: r.service_name, region: r.region,
+        armSkuName: r.arm_sku_name, priceType: r.price_type || "Consumption", quantity: r.quantity });
+    }
+    if (!$("rows").children.length) alert("Application has no resources.");
+  } catch (e) {
+    alert(`Supabase read failed: ${e.message}. Check the URL, anon key, and RLS SELECT policy.`);
+  }
+}
+
+// --- Boot ------------------------------------------------------------------
+ensureServiceDatalist();
+fillSelect($("currency"), CURRENCIES, "EUR");
+fillSelect($("defRegion"), REGIONS, "westeurope");
+addRow({ label: "web VM", serviceName: "Virtual Machines", armSkuName: "Standard_D2s_v5", quantity: 730 });
+addRow({ label: "blob storage", serviceName: "Storage", armSkuName: "", quantity: 100, priceType: "Consumption" });
+$("addRow").onclick = () => addRow();
+$("estimate").onclick = estimate;
+$("sbLoad").onclick = loadFromSupabase;
+</script>
+</body>
+</html>
