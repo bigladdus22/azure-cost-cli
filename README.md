@@ -9,6 +9,29 @@ of the Azure Pricing Calculator).
 > core (models, pricing client, Supabase repository, estimator) with tests. It is
 > not yet a polished end-to-end product.
 
+## Two ways to use it
+
+* **Web page (no install)** — `docs/index.html` is a self-contained calculator
+  that prices resources live from the browser against the Azure Retail Prices API
+  (it's public and CORS-enabled). It runs on **GitHub Pages** with no server and
+  no keys. See [Hosting the web page](#hosting-the-web-page).
+* **CLI** — the Python tool below, for full read **and** snapshot-write against
+  Supabase.
+
+## Hosting the web page
+
+The page lives in `docs/` and deploys automatically via
+`.github/workflows/pages.yml`. One-time setup:
+
+1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. Push to `main` (or run the *Deploy Pages* workflow). The workflow prints the
+   published URL, typically `https://<owner>.github.io/azure-cost-cli/`.
+
+You can also open `docs/index.html` straight from disk — it needs no build step.
+The optional "Load inventory from Supabase" panel reads applications with the
+**public anon key** (add a row-level-security `SELECT` policy first); writing
+snapshots stays with the CLI because it needs the secret key.
+
 ## How it works
 
 ```
