@@ -27,6 +27,10 @@ The page lives in `docs/` and deploys automatically via
 2. Push to `main` (or run the *Deploy Pages* workflow). The workflow prints the
    published URL, typically `https://<owner>.github.io/azure-cost-cli/`.
 
+> **Known issue:** the browser page currently can't reach the Azure Retail Prices
+> API directly (cross-origin CORS block). Tracked in
+> [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md) — the CLI is unaffected.
+
 You can also open `docs/index.html` straight from disk — it needs no build step.
 The optional "Load inventory from Supabase" panel reads applications with the
 **public anon key** (add a row-level-security `SELECT` policy first); writing
