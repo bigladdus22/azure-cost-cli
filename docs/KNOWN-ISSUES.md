@@ -2,33 +2,29 @@
 
 ## The web page cannot connect to Azure pricing (browser CORS)
 
-**Status:** open — parked for a later date.
+**Status:** fixed by the price-cache architecture (see below). Tracked in
+[#5](https://github.com/bigladdus22/azure-cost-cli/issues/5).
 
-**Symptom.** On the hosted / on-disk `docs/index.html` page, clicking *Estimate*
-fails to fetch prices. The browser console shows a CORS error (or a failed
-`fetch`) for `https://prices.azure.com/api/retail/prices`.
+**Symptom.** The old `docs/index.html` called `https://prices.azure.com/api/retail/prices`
+directly from the browser; clicking *Estimate* failed with `Load failed` and
+€0.00 totals.
 
-**Cause.** The page calls the Azure Retail Prices API **directly from the
-browser**. That API does not reliably return
-`Access-Control-Allow-Origin` headers for cross-origin browser requests, so the
-browser blocks the response. This is a limitation of the API, not of the page
-logic — the same request works fine server-side (e.g. from the Python CLI, which
-is unaffected).
+**Cause.** That API does not return an `Access-Control-Allow-Origin` header, so
+the browser blocks the cross-origin response. It's an API limitation, not a bug
+in the page — the same request works server-side (the Python CLI is unaffected).
 
-**Options to fix (later).**
+**Fix (shipped).** The browser no longer calls Microsoft. Instead:
 
-1. **Small serverless proxy (recommended).** Stand up a tiny function that
-   fetches from `prices.azure.com` server-side and re-emits the JSON with
-   permissive CORS headers, then point the page's `ENDPOINT` at it. Good fits:
-   - a **Supabase Edge Function** (keeps everything in the existing project),
-   - a Cloudflare Worker, or an Azure Function.
-2. **Use the CLI instead.** The Python tool (`azure-cost estimate`) talks to the
-   API server-side and is not affected by this issue.
+1. A **Supabase Edge Function** (`supabase/functions/refresh-azure-prices`)
+   fetches the Retail Prices API server-side — with pagination and `429`
+   handling — and upserts a filtered subset into `public.azure_prices`
+   (`supabase/migrations/0002_azure_prices_cache.sql`).
+2. **pg_cron** refreshes it on a schedule (`supabase/schedule/azure_prices_refresh.sql`);
+   retail prices move rarely, so weekly is plenty.
+3. The page reads `azure_prices` via the **anon key under RLS** — no cross-origin
+   call to Microsoft, no pagination or throttling in the browser.
 
-**Where the code is.** `docs/index.html` → the `iterItems()` / `fetchJson()`
-functions and the `ENDPOINT` constant. Only `ENDPOINT` needs to change once a
-proxy exists; the guardrails (filter building, paging, timeout) stay as-is.
+**Setup.** See `supabase/functions/refresh-azure-prices/README.md`.
 
-**Not the cause.** API key/auth (the API is anonymous), the filter syntax, or the
-region/currency values — those are validated before the request and work from
-the CLI.
+**Still works server-side.** The Python CLI (`azure-cost estimate`) talks to the
+API directly and doesn't need the cache.

@@ -26,7 +26,7 @@
   }
   .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 20px 80px; }
   header h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.01em; }
-  header p { color: var(--muted); margin: 0 0 20px; max-width: 62ch; }
+  header p { color: var(--muted); margin: 0 0 20px; max-width: 64ch; }
   .panel {
     background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
     box-shadow: var(--shadow); padding: 18px; margin-bottom: 18px;
@@ -56,7 +56,7 @@
   .btn-ghost { background: transparent; color: var(--accent); border-color: var(--line); }
   .btn-x { background: transparent; color: var(--muted); border: none; padding: 6px 8px; font-size: 16px; }
   .btn-x:hover { color: var(--warn); }
-  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
   .results table { min-width: 640px; }
   .results td { padding: 8px; border-top: 1px solid var(--line); }
   .results .sub { color: var(--muted); font-size: 12px; }
@@ -64,24 +64,50 @@
   .totals div span { display: block; }
   .totals .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
   .totals .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--chip); }
   .err { color: var(--warn); font-weight: 600; }
+  .ok { color: var(--ok); font-weight: 600; }
   .note { font-size: 13px; color: var(--muted); }
   .note code { background: var(--chip); padding: 1px 5px; border-radius: 5px; }
   details { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 6px; }
   summary { cursor: pointer; font-weight: 600; color: var(--accent); }
   a { color: var(--accent); }
   .foot { color: var(--muted); font-size: 12px; margin-top: 30px; text-align: center; }
+  .status { font-size: 13px; margin-left: auto; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>Azure Cost Estimator</h1>
-    <p>Price an application's Azure footprint using live figures from the public
-       <strong>Azure Retail Prices API</strong> — the same data behind the Azure Pricing Calculator.
-       Everything runs in your browser; no server, no keys.</p>
+    <p>Price an application's Azure footprint from prices cached in your
+       <strong>Supabase</strong> project. A server-side function keeps the cache
+       fresh from the public <strong>Azure Retail Prices API</strong>; the page
+       only ever reads from Supabase — fast, and no cross-origin calls to Microsoft.</p>
   </header>
+
+  <section class="panel">
+    <h2>Supabase connection</h2>
+    <div class="grid">
+      <div>
+        <label for="sbUrl">Supabase URL</label>
+        <input id="sbUrl" placeholder="https://YOUR-REF.supabase.co" autocomplete="off" />
+      </div>
+      <div>
+        <label for="sbKey">Publishable / anon key</label>
+        <input id="sbKey" placeholder="public anon key (never the service-role key)" autocomplete="off" />
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-ghost" id="sbSave">Save connection</button>
+      <button class="btn-ghost" id="sbTest">Test</button>
+      <span class="status" id="sbStatus"></span>
+    </div>
+    <p class="note" style="margin-top:10px">
+      Stored in this browser only (localStorage). The anon key is safe to expose —
+      the <code>azure_prices</code> table is read-only under row-level security.
+      Not set up yet? See <a href="https://github.com/bigladdus22/azure-cost-cli/tree/main/supabase/functions/refresh-azure-prices">the refresher's README</a>.
+    </p>
+  </section>
 
   <section class="panel">
     <h2>Settings</h2>
@@ -99,6 +125,10 @@
         <select id="defRegion"></select>
       </div>
     </div>
+    <p class="note" style="margin-top:10px">
+      Currency and region must be present in the cache — refresh the function with
+      a matching <code>AZURE_PRICE_CURRENCY</code> / filter if a lookup finds nothing.
+    </p>
   </section>
 
   <section class="panel">
@@ -132,25 +162,17 @@
       <summary>Load inventory from Supabase (optional)</summary>
       <div class="grid" style="margin-top:12px">
         <div>
-          <label for="sbUrl">Supabase URL</label>
-          <input id="sbUrl" placeholder="https://YOUR-REF.supabase.co" />
-        </div>
-        <div>
-          <label for="sbKey">Publishable / anon key</label>
-          <input id="sbKey" placeholder="public anon key only — never the service-role key" />
-        </div>
-        <div>
-          <label for="sbApp">Application name</label>
-          <input id="sbApp" placeholder="app name in Supabase" />
+          <label for="sbApp">Application name in Supabase</label>
+          <input id="sbApp" placeholder="app name in the applications table" />
         </div>
       </div>
       <div class="actions">
         <button class="btn-ghost" id="sbLoad">Load resources</button>
       </div>
       <p class="note" style="margin-top:10px">
-        Uses the browser-safe <strong>anon key</strong> and needs a row-level-security
-        <em>SELECT</em> policy on <code>applications</code> / <code>application_resources</code>.
-        Writing cost snapshots stays with the CLI/backend (it needs the secret key).
+        Reads the <code>applications</code> / <code>application_resources</code> tables
+        with the same anon key (needs an RLS <em>SELECT</em> policy on them). Writing
+        cost snapshots stays with the CLI — it needs the secret key.
       </p>
     </details>
   </section>
@@ -173,13 +195,14 @@
       <div><span class="k">Currency</span><span class="v" id="curLabel">—</span></div>
     </div>
     <p class="note" style="margin-top:14px">
-      Retail (pay-as-you-go) estimates. Actual bills vary with reservations, discounts,
-      tiered usage and taxes. When several meters match, the cheapest primary-region meter is used.
+      Retail (pay-as-you-go) estimates from the cached price sheet. Actual bills vary
+      with reservations, discounts, tiered usage and taxes. When several meters match,
+      the cheapest primary-region meter is used.
     </p>
   </section>
 
   <p class="foot">
-    Powered by the Azure Retail Prices API · part of
+    Reads cached Azure Retail Prices from Supabase · part of
     <a href="https://github.com/bigladdus22/azure-cost-cli">azure-cost-cli</a>
   </p>
 </div>
@@ -188,10 +211,9 @@
 "use strict";
 
 // --- Guardrail data, mirrored from the Python core -------------------------
-const ENDPOINT = "https://prices.azure.com/api/retail/prices";
-const API_VERSION = "2023-01-01-preview";
 const HTTP_TIMEOUT_MS = 30000;
-const MAX_PAGES = 20;
+const PRICE_TABLE = "azure_prices";
+const LS_KEY = "azure-cost-supabase";
 
 const CURRENCIES = ["EUR","USD","GBP","AUD","BRL","CAD","CHF","CNY","DKK","INR",
   "JPY","KRW","NOK","NZD","RUB","SEK","TWD"];
@@ -200,8 +222,6 @@ const REGIONS = ["westeurope","northeurope","uksouth","ukwest","eastus","eastus2
   "germanywestcentral","swedencentral","norwayeast","switzerlandnorth","eastasia",
   "southeastasia","australiaeast","japaneast","canadacentral","brazilsouth"];
 const PRICE_TYPES = ["Consumption","Reservation","DevTestConsumption"];
-const ALLOWED_FILTER_FIELDS = new Set(
-  ["serviceName","armRegionName","armSkuName","meterName","productName","priceType"]);
 const COMMON_SERVICES = ["Virtual Machines","Storage","Azure App Service",
   "Azure Database for PostgreSQL","Azure SQL Database","Functions","Bandwidth",
   "Azure Kubernetes Service","Container Registry","Load Balancer","Virtual Network",
@@ -210,28 +230,36 @@ const COMMON_SERVICES = ["Virtual Machines","Storage","Azure App Service",
 class ValidationError extends Error {}
 class PriceNotFoundError extends Error {}
 class PricingError extends Error {}
+class ConfigError extends Error {}
 
-// --- OData filter building (injection-safe) --------------------------------
-function escapeODataLiteral(value) {
-  for (const ch of value) {
-    if (ch.charCodeAt(0) < 0x20) throw new ValidationError("filter value contains control characters");
+// --- Supabase connection (browser-safe anon key, read-only) ----------------
+function getSupabaseConfig() {
+  const url = ($("sbUrl").value || "").trim().replace(/\/$/, "");
+  const key = ($("sbKey").value || "").trim();
+  if (!url.startsWith("https://") || !key) {
+    throw new ConfigError("Set your Supabase URL and anon key in the connection panel first.");
   }
-  return value.replace(/'/g, "''");
+  return { url, key };
 }
-function eqClause(field, value) {
-  if (!ALLOWED_FILTER_FIELDS.has(field)) throw new ValidationError(`field ${field} is not filterable`);
-  return `${field} eq '${escapeODataLiteral(value)}'`;
-}
-function buildFilter(spec) {
-  const clauses = [
-    eqClause("serviceName", spec.serviceName),
-    eqClause("armRegionName", spec.region),
-    eqClause("priceType", spec.priceType),
-  ];
-  if (spec.armSkuName) clauses.push(eqClause("armSkuName", spec.armSkuName));
-  if (spec.meterName)  clauses.push(eqClause("meterName", spec.meterName));
-  if (spec.productName) clauses.push(eqClause("productName", spec.productName));
-  return clauses.join(" and ");
+
+async function supabaseSelect(table, params) {
+  const { url, key } = getSupabaseConfig();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), HTTP_TIMEOUT_MS);
+  try {
+    const resp = await fetch(`${url}/rest/v1/${table}?${params.toString()}`, {
+      signal: ctrl.signal,
+      headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: "application/json" },
+    });
+    if (!resp.ok) throw new PricingError(`Supabase returned status ${resp.status}`);
+    return await resp.json();
+  } catch (e) {
+    if (e instanceof ConfigError || e instanceof PricingError) throw e;
+    if (e.name === "AbortError") throw new PricingError("Supabase request timed out");
+    throw new PricingError(`could not reach Supabase (${e.message})`);
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 // --- Validation ------------------------------------------------------------
@@ -247,50 +275,45 @@ function validateSpec(raw) {
     label: (raw.label || "").trim(),
     serviceName, region, priceType: raw.priceType, quantity,
     armSkuName: (raw.armSkuName || "").trim() || null,
-    meterName: null, productName: null,
   };
 }
 function displayName(spec) { return spec.label || spec.armSkuName || spec.serviceName; }
 
-// --- Azure Retail Prices client (timeout + paging + page cap) --------------
-async function fetchJson(url, params) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), HTTP_TIMEOUT_MS);
-  try {
-    const full = params ? `${url}?${params.toString()}` : url;
-    const resp = await fetch(full, { signal: ctrl.signal, headers: { "Accept": "application/json" } });
-    if (!resp.ok) throw new PricingError(`Retail Prices API returned status ${resp.status}`);
-    return await resp.json();
-  } catch (e) {
-    if (e.name === "AbortError") throw new PricingError("request timed out");
-    if (e instanceof PricingError) throw e;
-    throw new PricingError(`could not reach the Azure Retail Prices API (${e.message})`);
-  } finally { clearTimeout(t); }
-}
-async function iterItems(currency, odataFilter) {
-  let params = new URLSearchParams({ "$filter": odataFilter, "currencyCode": currency, "api-version": API_VERSION });
-  let url = ENDPOINT, items = [];
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const payload = await fetchJson(url, params);
-    if (Array.isArray(payload.Items)) items = items.concat(payload.Items);
-    if (!payload.NextPageLink) return items;
-    url = payload.NextPageLink; params = null; // NextPageLink already carries the query
-  }
-  throw new PricingError(`filter matched more than ${MAX_PAGES} pages — narrow it with an ARM SKU`);
-}
-function pickMeter(items) {
-  let primary = items.filter(i => i.isPrimaryMeterRegion);
-  if (!primary.length) primary = items;
-  let priced = primary.filter(i => Number(i.retailPrice) > 0);
+// --- Pricing: read cached rows from Supabase, pick the meter ----------------
+function pickMeter(rows) {
+  let primary = rows.filter(r => r.is_primary_meter_region);
+  if (!primary.length) primary = rows;
+  let priced = primary.filter(r => Number(r.retail_price) > 0);
   if (!priced.length) priced = primary;
-  return priced.reduce((a, b) => (Number(b.retailPrice) < Number(a.retailPrice) ? b : a));
+  return priced.reduce((a, b) => (Number(b.retail_price) < Number(a.retail_price) ? b : a));
 }
+
 async function priceResource(currency, spec) {
-  const items = await iterItems(currency, buildFilter(spec));
-  if (!items.length) throw new PriceNotFoundError(`no Azure meter matched ${displayName(spec)}`);
-  const m = pickMeter(items);
-  return { spec, unitPrice: Number(m.retailPrice), currency: m.currencyCode || currency,
-    product: m.productName || "", sku: m.skuName || "", meterId: m.meterId || "" };
+  const params = new URLSearchParams({
+    select: "retail_price,unit_price,currency_code,meter_id,product_name,sku_name,is_primary_meter_region",
+    service_name: `eq.${spec.serviceName}`,
+    arm_region_name: `eq.${spec.region}`,
+    price_type: `eq.${spec.priceType}`,
+    currency_code: `eq.${currency}`,
+    limit: "1000",
+  });
+  if (spec.armSkuName) params.set("arm_sku_name", `eq.${spec.armSkuName}`);
+
+  const rows = await supabaseSelect(PRICE_TABLE, params);
+  if (!rows.length) {
+    throw new PriceNotFoundError(
+      `no cached price for ${displayName(spec)} — refresh the cache for ` +
+      `${spec.serviceName} / ${spec.region} / ${currency}`);
+  }
+  const m = pickMeter(rows);
+  return {
+    spec,
+    unitPrice: Number(m.retail_price),
+    currency: m.currency_code || currency,
+    product: m.product_name || "",
+    sku: m.sku_name || "",
+    meterId: m.meter_id || "",
+  };
 }
 
 // --- UI --------------------------------------------------------------------
@@ -306,7 +329,7 @@ function fillSelect(sel, values, selected) {
   }
 }
 
-let serviceListId = "svcList";
+const serviceListId = "svcList";
 function ensureServiceDatalist() {
   if (document.getElementById(serviceListId)) return;
   const dl = document.createElement("datalist");
@@ -345,6 +368,12 @@ function readRows() {
 
 async function estimate() {
   const btn = $("estimate");
+  try {
+    getSupabaseConfig();
+  } catch (e) {
+    setStatus(e.message, true);
+    return;
+  }
   btn.disabled = true; btn.textContent = "Pricing…";
   const currency = $("currency").value;
   const body = $("resultRows"); body.innerHTML = "";
@@ -372,7 +401,7 @@ async function estimate() {
         <td class="num">${money(pr.unitPrice, currency)}</td>
         <td class="num"><strong>${money(cost, currency)}</strong></td>`;
     } catch (e) {
-      const kind = e instanceof PriceNotFoundError ? "no match" : "error";
+      const kind = e instanceof PriceNotFoundError ? "no cached price" : "error";
       tr.innerHTML = `
         <td><strong>${displayName(spec)}</strong><div class="sub">${spec.serviceName} · ${spec.region}</div></td>
         <td class="num">${spec.quantity.toLocaleString()}</td>
@@ -387,31 +416,59 @@ async function estimate() {
   $("resultsPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-// --- Optional Supabase loader (read-only, anon key) ------------------------
-async function loadFromSupabase() {
-  const url = $("sbUrl").value.trim().replace(/\/$/, "");
-  const key = $("sbKey").value.trim();
-  const app = $("sbApp").value.trim();
-  if (!url.startsWith("https://") || !key || !app) {
-    alert("Enter an https Supabase URL, an anon key, and an application name."); return;
-  }
-  const q = new URLSearchParams({
-    select: "name,application_resources(*)", name: `eq.${app}`, limit: "1" });
+// --- Connection panel ------------------------------------------------------
+function setStatus(msg, isErr) {
+  const el = $("sbStatus");
+  el.textContent = msg;
+  el.className = "status " + (isErr ? "err" : "ok");
+}
+function saveConfig() {
   try {
-    const resp = await fetch(`${url}/rest/v1/applications?${q}`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` } });
-    if (!resp.ok) throw new Error(`status ${resp.status}`);
-    const rows = await resp.json();
-    if (!rows.length) { alert(`No application named "${app}" (or RLS blocks the anon key).`); return; }
+    const { url, key } = getSupabaseConfig();
+    localStorage.setItem(LS_KEY, JSON.stringify({ url, key }));
+    setStatus("Saved.", false);
+  } catch (e) {
+    setStatus(e.message, true);
+  }
+}
+function loadConfig() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    const { url, key } = JSON.parse(raw);
+    if (url) $("sbUrl").value = url;
+    if (key) $("sbKey").value = key;
+  } catch { /* ignore corrupt storage */ }
+}
+async function testConnection() {
+  setStatus("Testing…", false);
+  try {
+    const rows = await supabaseSelect(PRICE_TABLE, new URLSearchParams({ select: "meter_id", limit: "1" }));
+    setStatus(rows.length ? "Connected — cache has data." : "Connected, but the cache is empty (run the refresher).", !rows.length);
+  } catch (e) {
+    setStatus(e.message, true);
+  }
+}
+
+// --- Optional inventory loader --------------------------------------------
+async function loadFromSupabase() {
+  const app = $("sbApp").value.trim();
+  if (!app) { setStatus("Enter an application name to load.", true); return; }
+  try {
+    const params = new URLSearchParams({
+      select: "name,application_resources(*)", name: `eq.${app}`, limit: "1" });
+    const rows = await supabaseSelect("applications", params);
+    if (!rows.length) { setStatus(`No application named "${app}" (or RLS blocks the anon key).`, true); return; }
     if (rows[0].name) $("appName").value = rows[0].name;
     $("rows").innerHTML = "";
     for (const r of (rows[0].application_resources || [])) {
       addRow({ label: r.label, serviceName: r.service_name, region: r.region,
         armSkuName: r.arm_sku_name, priceType: r.price_type || "Consumption", quantity: r.quantity });
     }
-    if (!$("rows").children.length) alert("Application has no resources.");
+    if (!$("rows").children.length) { setStatus("Application has no resources.", true); return; }
+    setStatus(`Loaded ${$("rows").children.length} resources.`, false);
   } catch (e) {
-    alert(`Supabase read failed: ${e.message}. Check the URL, anon key, and RLS SELECT policy.`);
+    setStatus(`Load failed: ${e.message}`, true);
   }
 }
 
@@ -419,10 +476,13 @@ async function loadFromSupabase() {
 ensureServiceDatalist();
 fillSelect($("currency"), CURRENCIES, "EUR");
 fillSelect($("defRegion"), REGIONS, "westeurope");
+loadConfig();
 addRow({ label: "web VM", serviceName: "Virtual Machines", armSkuName: "Standard_D2s_v5", quantity: 730 });
 addRow({ label: "blob storage", serviceName: "Storage", armSkuName: "", quantity: 100, priceType: "Consumption" });
 $("addRow").onclick = () => addRow();
 $("estimate").onclick = estimate;
+$("sbSave").onclick = saveConfig;
+$("sbTest").onclick = testConnection;
 $("sbLoad").onclick = loadFromSupabase;
 </script>
 </body>
