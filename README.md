@@ -11,30 +11,46 @@ of the Azure Pricing Calculator).
 
 ## Two ways to use it
 
-* **Web page (no install)** — `docs/index.html` is a self-contained calculator
-  that prices resources live from the browser against the Azure Retail Prices API
-  (it's public and CORS-enabled). It runs on **GitHub Pages** with no server and
-  no keys. See [Hosting the web page](#hosting-the-web-page).
+* **Web page (no install)** — `docs/index.html` prices resources by reading a
+  **price cache in your Supabase project** (kept fresh server-side). It runs on
+  **GitHub Pages** and only ever talks to Supabase — no cross-origin calls to
+  Microsoft. See [Hosting the web page](#hosting-the-web-page).
 * **CLI** — the Python tool below, for full read **and** snapshot-write against
   Supabase.
 
 ## Hosting the web page
 
-The page lives in `docs/` and deploys automatically via
-`.github/workflows/pages.yml`. One-time setup:
+The browser must **not** call `prices.azure.com` directly — that API sends no
+CORS headers (so the fetch is blocked) and is paginated and throttle-prone. So
+the page reads a cached, pre-filtered price sheet from Supabase instead:
+
+```
+Azure Retail Prices API                Supabase                     GitHub Pages
+  prices.azure.com                                                    docs/index.html
+        ▲                          refresh-azure-prices (Edge Fn)          │
+        └── fetch + paginate ◀──── (server-side, pg_cron weekly) ──▶ azure_prices ──▶ read via anon key (RLS)
+                                                                     (cache table)
+```
+
+**Set up the cache** (one time) — full steps in
+[`supabase/functions/refresh-azure-prices/README.md`](supabase/functions/refresh-azure-prices/README.md):
+
+1. Apply `supabase/migrations/0002_azure_prices_cache.sql` (`azure_prices` + RLS).
+2. `supabase functions deploy refresh-azure-prices --no-verify-jwt` and set its
+   secrets (`REFRESH_SECRET`, `AZURE_PRICE_CURRENCY`, `AZURE_PRICE_FILTER`).
+3. Schedule + first-run via `supabase/schedule/azure_prices_refresh.sql` (pg_cron).
+
+**Publish the page:**
 
 1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-2. Push to `main` (or run the *Deploy Pages* workflow). The workflow prints the
-   published URL, typically `https://<owner>.github.io/azure-cost-cli/`.
-
-> **Known issue:** the browser page currently can't reach the Azure Retail Prices
-> API directly (cross-origin CORS block). Tracked in
-> [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md) — the CLI is unaffected.
+2. Push to `main` (or run *Deploy Pages*) → `https://<owner>.github.io/azure-cost-cli/`.
+3. In the page's **Supabase connection** panel, enter your project URL + anon key
+   (stored in the browser only), hit **Test**, then **Estimate cost**.
 
 You can also open `docs/index.html` straight from disk — it needs no build step.
 The optional "Load inventory from Supabase" panel reads applications with the
-**public anon key** (add a row-level-security `SELECT` policy first); writing
-snapshots stays with the CLI because it needs the secret key.
+same anon key (add an RLS `SELECT` policy first); writing snapshots stays with
+the CLI because it needs the secret key.
 
 ## How it works
 
