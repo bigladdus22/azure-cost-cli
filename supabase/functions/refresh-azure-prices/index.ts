@@ -113,8 +113,21 @@ Deno.serve(async (req) => {
       const rows = (payload.Items ?? []).map(mapRow);
       fetched += rows.length;
 
-      for (let k = 0; k < rows.length; k += UPSERT_BATCH) {
-        const batch = rows.slice(k, k + UPSERT_BATCH);
+      // Dedupe within the page by the upsert conflict key. Azure can return
+      // several rows sharing (meter_id, currency, price_type, tier, region) —
+      // e.g. one meter reused across products — and Postgres rejects two
+      // conflicting rows in a single ON CONFLICT statement. Last one wins.
+      const byKey = new Map<string, ReturnType<typeof mapRow>>();
+      for (const r of rows) {
+        byKey.set(
+          [r.meter_id, r.currency_code, r.price_type, r.tier_minimum_units, r.arm_region_name].join("|"),
+          r,
+        );
+      }
+      const deduped = [...byKey.values()];
+
+      for (let k = 0; k < deduped.length; k += UPSERT_BATCH) {
+        const batch = deduped.slice(k, k + UPSERT_BATCH);
         const { error } = await supabase
           .from("azure_prices")
           .upsert(batch, { onConflict: ON_CONFLICT });
